@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"sort"
 )
 
 var _ = fmt.Println
@@ -122,7 +123,7 @@ func toIndex(input uint8) uint {
 
 func validWord(input string) bool {
 	// TODO(gdk): Find a better wordlist.
-	if len(input) == 1 && input != "a" {
+	if len(input) == 1 && input != "a" && input != "i" {
 		return false
 	}
 
@@ -194,11 +195,31 @@ func augmentPartial(partial string, root *trieNode, depth int) {
 	}
 }
 
-func handleRootSearch(root *trieNode, words chan string, done chan interface{}) {
+func handleRootSearch(root *trieNode, wordList *[]string, words chan string, done chan interface{}) {
 	for word := range words {
 		augmentPartial(word, root, 0)
+		fmt.Println("done", word)
 	}
 	<-done
+}
+
+type wordScore struct {
+	word  string
+	score int
+}
+
+type wordScores []wordScore
+
+func (this wordScores) Len() int {
+	return len(this)
+}
+
+func (this wordScores) Swap(i, j int) {
+	this[i], this[j] = this[j], this[i]
+}
+
+func (this wordScores) Less(i, j int) bool {
+	return this[i].score > this[j].score
 }
 
 func main() {
@@ -221,25 +242,28 @@ func main() {
 		}
 	}
 
-	// words := []string{"ambling", "go"}
-
 	root := newTrieNode(nil)
 	for _, word := range words {
 		root.insert(word)
 	}
 
+	scores := wordScores(make([]wordScore, 0))
+	for _, word := range words {
+		scores = append(scores, wordScore{word: word, score: countWords(word, root)})
+	}
+	sort.Sort(scores)
+
 	wordChannel := make(chan string)
 	doneChannel := make(chan interface{})
 	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
-		go handleRootSearch(root, wordChannel, doneChannel)
+		go handleRootSearch(root, &words, wordChannel, doneChannel)
 	}
 
-	for _, word := range words {
-		if len(word) > 5 {
-			wordChannel <- word
-		}
+	for _, word := range scores {
+		wordChannel <- word.word
 	}
 
+	close(wordChannel)
 	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
 		<-doneChannel
 	}
