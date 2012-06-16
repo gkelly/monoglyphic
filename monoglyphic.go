@@ -2,7 +2,7 @@ package main
 
 import (
 	"bufio"
-	"container/list"
+	"flag"
 	"fmt"
 	"os"
 	"runtime"
@@ -11,9 +11,7 @@ import (
 
 var _ = fmt.Println
 
-const (
-	wordListPath = "/usr/share/dict/words"
-)
+var wordListPath = flag.String("wordlist", "/usr/share/dict/words", "path to the word list")
 
 type letterSet int32
 
@@ -103,17 +101,17 @@ func (this *trieNode) dump() {
 	}
 }
 
-func (this *trieNode) findUnconflictedTerminals(used letterSet, result *list.List) {
+func (this *trieNode) findUnconflictedTerminals(used letterSet, handler func(*trieNode)) {
 	if this.used.conflictsWith(used) {
 		return
 	}
 
 	if this.terminal {
-		result.PushBack(this)
+		handler(this)
 	}
 
 	for _, next := range this.next {
-		next.findUnconflictedTerminals(used, result)
+		next.findUnconflictedTerminals(used, handler)
 	}
 }
 
@@ -160,44 +158,43 @@ func countWords(input string, root *trieNode) int {
 	return count
 }
 
-func bump(input string) {}
-
 var recordLength = 0
 var recordPartial = ""
 
-func augmentPartial(partial string, root *trieNode, depth int) {
+func augmentPartial(partial string, root *trieNode, wordList *[]string, depth int) {
 	for i := len(partial); i >= 0; i-- {
 		prefix, suffix := partial[:i], partial[i:]
 		prefixSet := toLetterSet(prefix)
 		suffixNode := root.walk(suffix)
 
-		if suffixNode != nil {
-			validSuffixes := list.New()
-			suffixNode.findUnconflictedTerminals(prefixSet, validSuffixes)
-
-			for i := validSuffixes.Front(); i != nil; i = i.Next() {
-				validSuffix := i.Value.(*trieNode).partial
-				if len(validSuffix) <= len(suffix) {
-					continue
-				}
-
-				length := countWords(prefix+validSuffix, root)
-				if length > recordLength {
-					recordLength = length
-					recordPartial = prefix + validSuffix
-					fmt.Println(recordPartial, recordLength)
-				}
-
-				newPartial := prefix + validSuffix
-				augmentPartial(newPartial, root, depth+1)
-			}
+		if suffixNode == nil {
+			return
 		}
+
+		suffixHandler := func(node *trieNode) {
+			validSuffix := node.partial
+			if len(validSuffix) <= len(suffix) {
+				return
+			}
+
+			length := countWords(prefix+validSuffix, root)
+			if length > recordLength {
+				recordLength = length
+				recordPartial = prefix + validSuffix
+				fmt.Println(recordPartial, recordLength)
+			}
+
+			newPartial := prefix + validSuffix
+			augmentPartial(newPartial, root, wordList, depth+1)
+
+		}
+		suffixNode.findUnconflictedTerminals(prefixSet, suffixHandler)
 	}
 }
 
 func handleRootSearch(root *trieNode, wordList *[]string, words chan string, done chan interface{}) {
 	for word := range words {
-		augmentPartial(word, root, 0)
+		augmentPartial(word, root, wordList, 0)
 		fmt.Println("done", word)
 	}
 	<-done
@@ -223,9 +220,10 @@ func (this wordScores) Less(i, j int) bool {
 }
 
 func main() {
+	flag.Parse()
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
-	wordList, _ := os.Open(wordListPath)
+	wordList, _ := os.Open(*wordListPath)
 	reader := bufio.NewReader(wordList)
 
 	words := make([]string, 0)
