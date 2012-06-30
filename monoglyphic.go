@@ -39,7 +39,7 @@ type trieNode struct {
 	value    uint8
 	parent   *trieNode
 	terminal bool
-	next     map[uint8]*trieNode
+	next     [26]*trieNode
 	used     letterSet
 	partial  string
 }
@@ -49,7 +49,6 @@ func newTrieNode(parent *trieNode) *trieNode {
 		used:     letterSet(0),
 		parent:   parent,
 		terminal: false,
-		next:     make(map[uint8]*trieNode),
 		partial:  "",
 	}
 
@@ -67,15 +66,16 @@ func (this *trieNode) insert(value string) {
 	}
 
 	character := value[0]
-	if _, ok := this.next[character]; !ok {
-		this.next[character] = newTrieNode(this)
+	index := toIndex(character)
+	if this.next[index] == nil {
+		this.next[index] = newTrieNode(this)
 
-		next := this.next[character]
+		next := this.next[index]
 		next.value = character
 		next.used.add(character)
 		next.partial = this.partial + value[0:1]
 	}
-	this.next[character].insert(value[1:])
+	this.next[index].insert(value[1:])
 }
 
 func (this *trieNode) walk(value string) *trieNode {
@@ -83,8 +83,7 @@ func (this *trieNode) walk(value string) *trieNode {
 		return this
 	}
 
-	character := value[0]
-	next := this.next[character]
+	next := this.next[toIndex(value[0])]
 	if next != nil {
 		return next.walk(value[1:])
 	}
@@ -111,7 +110,9 @@ func (this *trieNode) findUnconflictedTerminals(used letterSet, handler func(*tr
 	}
 
 	for _, next := range this.next {
-		next.findUnconflictedTerminals(used, handler)
+		if next != nil {
+			next.findUnconflictedTerminals(used, handler)
+		}
 	}
 }
 
@@ -120,7 +121,7 @@ func toIndex(input uint8) uint {
 }
 
 func validWord(input string) bool {
-	// TODO(gdk): Find a better wordlist.
+	// TODO(gkelly): Find a better wordlist.
 	if len(input) == 1 && input != "a" && input != "i" {
 		return false
 	}
