@@ -159,6 +159,8 @@ func countWords(input string, root *trieNode) int {
 	return count
 }
 
+// TODO(gkelly): Yes, this is a huge race just waiting to happen. Replace this
+// logic with a goroutine that tracks the maximum length seen.
 var recordLength = 0
 var recordPartial = ""
 
